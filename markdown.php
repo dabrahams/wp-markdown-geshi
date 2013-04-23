@@ -2961,7 +2961,9 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 		return $text;
 	}
 	function _doFencedCodeBlocksHighlight_callback($matches) {
-		$codeblock = $matches[2];
+		$classname =& $matches[2];
+		$attrs     =& $matches[3];
+		$codeblock = $matches[4];
                 // Look for language and starting line specifier in the form {{lang:xxx,line:nnn}}
 		$codeblock = preg_replace_callback(
 			'/^(\{\{((lang:([\w]+)|line:([\d]+)) *(?(?!\}), *))+\}\}\n|)(.*?)$/s', 
