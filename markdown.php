@@ -11,6 +11,8 @@
 # <http://daringfireball.net/projects/markdown/>
 #
 
+include_once 'markdown-highlight.php';
+include_once 'wp-syntax/geshi/geshi.php';
 
 define( 'MARKDOWN_VERSION',  "1.0.1n" ); # Sat 10 Oct 2009
 define( 'MARKDOWNEXTRA_VERSION',  "1.2.4" ); # Sat 10 Oct 2009
@@ -68,12 +70,12 @@ function Markdown($text) {
 ### WordPress Plugin Interface ###
 
 /*
-Plugin Name: Markdown Extra
-Plugin URI: http://michelf.com/projects/php-markdown/
-Description: <a href="http://daringfireball.net/projects/markdown/syntax">Markdown syntax</a> allows you to write using an easy-to-read, easy-to-write plain text format. Based on the original Perl version by <a href="http://daringfireball.net/">John Gruber</a>. <a href="http://michelf.com/projects/php-markdown/">More...</a>
+Plugin Name: Markdown Extra / Geshi
+Plugin URI: http://cpp-next.com/posting/#markdown
+Description: <a href="http://daringfireball.net/projects/markdown/syntax">Markdown syntax</a> allows you to write using an easy-to-read, easy-to-write plain text format. <a href="http://michelf.com/projects/php-markdown/">Base plugin</a> by <a href="http://michelf.com">Michel Fortin</a>, based on the original Perl version by <a href="http://daringfireball.net/">John Gruber</a>. <a href="http://www.dougalstanton.net/blog/index.php/2007/12/15/syntax-highlighting-with-markdown-in-wordpress/">Geshi Syntax Extension</a> by <a href="http://dougalstanton.net">Dougal Stanton</a> with <a href="http://cpp-next.com/posting/#markdown">tweaks</a> by <a href="http://daveabrahams.com">Dave Abrahams</a>
 Version: 1.2.4
-Author: Michel Fortin
-Author URI: http://michelf.com/
+Author: Dave Abrahams & Friends
+Author URI: http://daveabrahams.com
 */
 
 if (isset($wp_version)) {
@@ -931,12 +933,12 @@ class Markdown_Parser {
 		if ($matches[2] == '-' && preg_match('{^-(?: |$)}', $matches[1]))
 			return $matches[0];
 		
-		$level = $matches[2]{0} == '=' ? 1 : 2;
+		$level = $matches[2]{0} == '=' ? 3 : 4;
 		$block = "<h$level>".$this->runSpanGamut($matches[1])."</h$level>";
 		return "\n" . $this->hashBlock($block) . "\n\n";
 	}
 	function _doHeaders_callback_atx($matches) {
-		$level = strlen($matches[1]);
+		$level = strlen($matches[1]) + 2;
 		$block = "<h$level>".$this->runSpanGamut($matches[2])."</h$level>";
 		return "\n" . $this->hashBlock($block) . "\n\n";
 	}
@@ -1113,7 +1115,7 @@ class Markdown_Parser {
 				)
 				((?=^[ ]{0,'.$this->tab_width.'}\S)|\Z)	# Lookahead for non-space at line-start, or end of doc
 			}xm',
-			array(&$this, '_doCodeBlocks_callback'), $text);
+			array(&$this, '_doCodeBlocks_highlight_callback'), $text);
 
 		return $text;
 	}
@@ -1130,6 +1132,21 @@ class Markdown_Parser {
 		return "\n\n".$this->hashBlock($codeblock)."\n\n";
 	}
 
+	function _DoCodeBlocks_highlight_callback($matches) {
+		$codeblock = $matches[1];
+
+		$codeblock = $this->outdent($codeblock);
+
+		# trim leading newlines and trailing whitespace
+		$codeblock = preg_replace(array('/\A\n+/', '/\s+\z/'), '', $codeblock);
+
+		$codeblock = preg_replace_callback('/^(\{\{((lang:([\w]+)|line:([\d]+)) *(?(?!\}), *))+\}\}\n|)(.*?)$/s', 
+											create_function('$matches', '
+		return highlight_src($matches[6], empty($matches[4]) ? "cpp" : $matches[4], $matches[5]);
+		'), $codeblock);
+
+		return "\n\n".$this->hashBlock($codeblock)."\n\n";
+	 }
 
 	function makeCodeSpan($code) {
 	#
@@ -2267,13 +2284,13 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 	function _doHeaders_callback_setext($matches) {
 		if ($matches[3] == '-' && preg_match('{^- }', $matches[1]))
 			return $matches[0];
-		$level = $matches[3]{0} == '=' ? 1 : 2;
+		$level = $matches[3]{0} == '=' ? 3 : 4;
 		$attr  = $this->_doHeaders_attr($id =& $matches[2]);
 		$block = "<h$level$attr>".$this->runSpanGamut($matches[1])."</h$level>";
 		return "\n" . $this->hashBlock($block) . "\n\n";
 	}
 	function _doHeaders_callback_atx($matches) {
-		$level = strlen($matches[1]);
+		$level = strlen($matches[1]) + 2;
 		$attr  = $this->_doHeaders_attr($id =& $matches[3]);
 		$block = "<h$level$attr>".$this->runSpanGamut($matches[2])."</h$level>";
 		return "\n" . $this->hashBlock($block) . "\n\n";
@@ -2565,9 +2582,26 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 				# Closing marker.
 				\1 [ ]* \n
 			}xm',
-			array(&$this, '_doFencedCodeBlocks_callback'), $text);
+			array(&$this, '_doFencedCodeBlocksHighlight_callback'), $text);
 
 		return $text;
+	}
+	function _doFencedCodeBlocksHighlight_callback($matches) {
+		$codeblock = $matches[2];
+                // Look for language and starting line specifier in the form {{lang:xxx,line:nnn}}
+		$codeblock = preg_replace_callback(
+			'/^(\{\{((lang:([\w]+)|line:([\d]+)) *(?(?!\}), *))+\}\}\n|)(.*?)$/s', 
+
+                        // Build a function that will highlight the
+                        // code, defaulting to C++ highlights and no line
+                        // numbers.
+			create_function('$matches', '
+return highlight_src($matches[6], empty($matches[4]) ? "cpp" : $matches[4], $matches[5]);
+'
+                        ), 
+			$codeblock);
+
+		return "\n\n".$this->hashBlock($codeblock)."\n";
 	}
 	function _doFencedCodeBlocks_callback($matches) {
 		$codeblock = $matches[2];
